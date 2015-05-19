@@ -51,11 +51,6 @@ object MemRedBench {
       }
       data.map { kv =>
         val red = r.get(kv._1).get
-        if (red != kv._2.toString) {
-          Some(red, kv._2)
-        } else {
-          None
-        }
       }
     }
   }

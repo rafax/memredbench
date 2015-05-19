@@ -5,7 +5,7 @@ version := "1.0"
 scalaVersion := "2.11.6"
 
 libraryDependencies ++= Seq(
-  "net.debasishg" %% "redisclient" % "3.0",
+  "redis.clients" % "jedis" % "2.7.2",
 
   "com.bionicspirit" %% "shade" % "1.6.0"
 )
