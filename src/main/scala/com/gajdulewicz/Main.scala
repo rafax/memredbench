@@ -38,20 +38,28 @@ object MemRedBench {
   def getSetSeq(scale: Float, rp: RedisPersistence, mp: MemcachedPersistence): Unit = {
     val data = (1 to (10000 * scale).toInt).map(n => UUID.randomUUID().toString -> UUID.randomUUID().toString).toMap
     println("Starting redis")
-    runGetSet(data, rp)
+    var milis = runGetSet(data, rp)
+    printStats(data.size, milis)
     println("Starting memcached")
-    runGetSet(data, mp)
+    milis = runGetSet(data, mp)
+    printStats(data.size, milis)
   }
 
   def getSetPar(scale: Float, rp: RedisPersistence, mp: MemcachedPersistence): Unit = {
     val data = (1 to (10000 * scale).toInt).map(n => UUID.randomUUID().toString -> UUID.randomUUID().toString).toMap.par
     println("Starting redis")
-    runGetSet(data, rp)
+    var milis = runGetSet(data, rp)
+    printStats(data.size, milis)
     println("Starting memcached")
-    runGetSet(data, mp)
+    milis = runGetSet(data, mp)
+    printStats(data.size, milis)
   }
 
-  def runGetSet(data: GenMap[String, String], r: Persistence[String]): Unit = {
+  def printStats(length: Long, milis: Long): Unit = {
+    println(s"Took $milis ms throughput ${length * 1000 / milis}/s avg ${milis.toFloat / length} ms")
+  }
+
+  def runGetSet(data: GenMap[String, String], r: Persistence[String]): Long = {
     time {
       data.map { d =>
         r.set(d._1, d._2)
@@ -63,12 +71,10 @@ object MemRedBench {
     }
   }
 
-  def time[A](a: => A) = {
+  def time[A](a: => A): Long = {
     val now = System.nanoTime
-    val result = a
-    val micros = (System.nanoTime - now) / 1000000
-    println("%d ms".format(micros))
-    result
+    a
+    (System.nanoTime - now) / 1000000
   }
 
   def flushBefore[A](p: Persistence[_]*)(a: => A) = {
