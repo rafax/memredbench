@@ -10,13 +10,20 @@ import scala.collection.GenMap
  */
 object MemRedBench {
   val defaultScale = 1f
+  val defaultMemcachedHost = ("localhost", 11211)
+  val defaultRedisHost = ("localhost", 6379)
 
   def main(args: Array[String]): Unit = {
-
     val scale = args.headOption.map(_.toFloat).getOrElse(defaultScale)
-    println(s"Will run benchmark with scale $scale")
-    val rp = new RedisPersistence("localhost", 6379)
-    val mp = new MemcachedPersistence("localhost", 11211)
+    val (mcHost: String, mcPort: Int) = Option(System.getenv("MEMCACHED")).map(_.split(":") match {
+      case Array(host, port, _*) => (host, port.toInt)
+    }).getOrElse(defaultMemcachedHost)
+    val (rHost: String, rPort: Int) = Option(System.getenv("REDIS")).map(_.split(":") match {
+      case Array(host, port, _*) => (host, port.toInt)
+    }).getOrElse(defaultRedisHost)
+    println(s"Will run benchmark with scale $scale redis $rHost memcached $mcHost")
+    val rp = new RedisPersistence(rHost, rPort)
+    val mp = new MemcachedPersistence(mcHost, mcPort)
     println("Run sequential")
     flushBefore(rp, mp) {
       getSetSeq(scale, rp, mp)
@@ -31,41 +38,43 @@ object MemRedBench {
   def getSetSeq(scale: Float, rp: RedisPersistence, mp: MemcachedPersistence): Unit = {
     val data = (1 to (10000 * scale).toInt).map(n => UUID.randomUUID().toString -> UUID.randomUUID().toString).toMap
     println("Starting redis")
-    runGetSet(data, rp)
+    var milis = runGetSet(data, rp)
+    printStats(data.size, milis)
     println("Starting memcached")
-    runGetSet(data, mp)
+    milis = runGetSet(data, mp)
+    printStats(data.size, milis)
   }
 
   def getSetPar(scale: Float, rp: RedisPersistence, mp: MemcachedPersistence): Unit = {
     val data = (1 to (10000 * scale).toInt).map(n => UUID.randomUUID().toString -> UUID.randomUUID().toString).toMap.par
     println("Starting redis")
-    runGetSet(data, rp)
+    var milis = runGetSet(data, rp)
+    printStats(data.size, milis)
     println("Starting memcached")
-    runGetSet(data, mp)
+    milis = runGetSet(data, mp)
+    printStats(data.size, milis)
   }
 
-  def runGetSet(data: GenMap[String, String], r: Persistence[String]): Unit = {
+  def printStats(length: Long, milis: Long): Unit = {
+    println(s"Took $milis ms throughput ${length * 1000 / milis}/s avg ${milis.toFloat / length} ms")
+  }
+
+  def runGetSet(data: GenMap[String, String], r: Persistence[String]): Long = {
     time {
       data.map { d =>
         r.set(d._1, d._2)
       }
       data.map { kv =>
         val red = r.get(kv._1).get
-        if (red != kv._2.toString) {
-          Some(red, kv._2)
-        } else {
-          None
-        }
+        assert(red == kv._2)
       }
     }
   }
 
-  def time[A](a: => A) = {
+  def time[A](a: => A): Long = {
     val now = System.nanoTime
-    val result = a
-    val micros = (System.nanoTime - now) / 1000000
-    println("%d ms".format(micros))
-    result
+    a
+    (System.nanoTime - now) / 1000000
   }
 
   def flushBefore[A](p: Persistence[_]*)(a: => A) = {

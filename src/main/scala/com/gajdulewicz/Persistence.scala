@@ -3,7 +3,7 @@ package com.gajdulewicz
 import java.io.PrintStream
 import java.net.Socket
 
-import com.redis.{RedisClientPool, Seconds}
+import redis.clients.jedis.{Jedis, JedisPool}
 import shade.memcached.{Configuration, Memcached}
 
 import scala.concurrent.duration.Duration
@@ -27,35 +27,24 @@ trait Persistence[T] {
 
 class RedisPersistence(address: String, port: Int) extends Persistence[String] {
 
-  val clientPool = new RedisClientPool(address, port)
+  val clientPool = new JedisPool(address, port)
 
-  override def set(k: String, v: String): Unit = clientPool.withClient { c => c.set(k, v, false, Seconds(defaultExpiry.toSeconds)) }
+  def withClient[T](body: Jedis => T) = {
+    val client = clientPool.getResource
+    try {
+      body(client)
+    } finally {
+      client.close()
+    }
+  }
 
-  override def get(k: String): Option[String] = clientPool.withClient { c => c.get(k) }
+  override def set(k: String, v: String): Unit = withClient { c => c.setex(k, defaultExpiry.toSeconds.toInt, v) }
 
-  def append(listKey: String, v: String): Unit = clientPool.withClient { c => c.lpush(listKey, v) }
+  override def get(k: String): Option[String] = withClient { c => Option(c.get(k)) }
 
-  def getAll(listKey: String): Seq[String] = clientPool.withClient { c => c.lrange(listKey, 0, -1).getOrElse(Nil).flatten }
-
-  override def flush(): Unit = clientPool.withClient { c => c.flushall }
-
+  override def flush(): Unit = withClient { c => c.flushAll() }
 }
 
-class RedisPipelinedPersistence(address: String, port: Int) extends Persistence[String] {
-
-val clientPool = new RedisClientPool(address, port)
-
-override def set(k: String, v: String): Unit = clientPool.withClient { c => c.set(k, v, false, Seconds(defaultExpiry.toSeconds)) }
-
-override def get(k: String): Option[String] = clientPool.withClient { c => c.get(k) }
-
-def append(listKey: String, v: String): Unit = clientPool.withClient { c => c.lpush(listKey, v) }
-
-def getAll(listKey: String): Seq[String] = clientPool.withClient { c => c.lrange(listKey, 0, -1).getOrElse(Nil).flatten }
-
-override def flush(): Unit = clientPool.withClient { c => c.flushall }
-
-}
 
 class MemcachedPersistence(address: String, port: Int) extends Persistence[String] {
 
