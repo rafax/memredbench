@@ -10,13 +10,20 @@ import scala.collection.GenMap
  */
 object MemRedBench {
   val defaultScale = 1f
+  val defaultMemcachedHost = ("localhost", 11211)
+  val defaultRedisHost = ("localhost", 6379)
 
   def main(args: Array[String]): Unit = {
-
     val scale = args.headOption.map(_.toFloat).getOrElse(defaultScale)
-    println(s"Will run benchmark with scale $scale")
-    val rp = new RedisPersistence("localhost", 6379)
-    val mp = new MemcachedPersistence("localhost", 11211)
+    val (mcHost: String, mcPort: Int) = Option(System.getenv("MEMCACHED")).map(_.split(":") match {
+      case Array(host, port, _*) => (host, port.toInt)
+    }).getOrElse(defaultMemcachedHost)
+    val (rHost: String, rPort: Int) = Option(System.getenv("REDIS")).map(_.split(":") match {
+      case Array(host, port, _*) => (host, port.toInt)
+    }).getOrElse(defaultRedisHost)
+    println(s"Will run benchmark with scale $scale redis $rHost memcached $mcHost")
+    val rp = new RedisPersistence(rHost, rPort)
+    val mp = new MemcachedPersistence(mcHost, mcPort)
     println("Run sequential")
     flushBefore(rp, mp) {
       getSetSeq(scale, rp, mp)
@@ -51,6 +58,7 @@ object MemRedBench {
       }
       data.map { kv =>
         val red = r.get(kv._1).get
+        assert(red == kv._2)
       }
     }
   }
